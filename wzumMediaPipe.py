@@ -22,13 +22,15 @@ from sklearn.utils.metaestimators import _BaseComposition
 import operator
 import string
 from sklearn import datasets
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.naive_bayes import GaussianNB
 
 import os
 from random import random, randint
 from mlflow import log_metric, log_param, log_artifacts
 
 class voteClassifier(_BaseComposition, BaseEstimator, ClassifierMixin):
-    def __init__(self, classifiers, vote='classlabel', weights=None):
+    def __init__(self, classifiers, vote='probability', weights=None):
         self.classifiers = classifiers
         self.namedClassifiers = {clf.__class__.__name__: clf for clf in classifiers}
         self.vote = vote
@@ -113,8 +115,8 @@ if __name__ == '__main__':
     
     # print(type(y_train))
     
-    msno.matrix(X_train)
-    plt.show()
+    # msno.matrix(X_train)
+    # plt.show()
     
     clfs = [
         LinearSVC,
@@ -162,8 +164,10 @@ if __name__ == '__main__':
     #     # plt.show()
 
     clf1 = LinearSVC()
+    clf1 = CalibratedClassifierCV(clf1) 
     clf2 = RandomForestClassifier()
     clf3 = BaggingClassifier()
+    clf4 = LGBMClassifier()
 
     pipe1 = Pipeline([['sc', StandardScaler()],
                       ['clf', clf1]])
@@ -171,52 +175,34 @@ if __name__ == '__main__':
     pipe3 = Pipeline([['sc', StandardScaler()],
                     ['clf', clf3]])
     
-    # clf1 = LogisticRegression(penalty='l2', C=0.001, random_state=1)
-    # clf2 = DecisionTreeClassifier(max_depth=1, criterion='entropy', random_state=0)
-    # clf3 = KNeighborsClassifier(n_neighbors=1, p=2, metric='minkowski')
-
-    # pipe1 = Pipeline([['sc', StandardScaler()],
-    #                   ['clf', clf1]])
+    pipe4 = Pipeline([['sc', StandardScaler()],
+                ['clf', clf4]])
     
-    # pipe3 = Pipeline([['sc', StandardScaler()],
-    #                 ['clf', clf3]])
-    
-    clf_labels = ['LinearSVC', 'RandomForestClassifier', 'BaggingClassifier']
+    clf_labels = ['LinearSVC', 'RandomForestClassifier', 'BaggingClassifier', 'LGBMClassifier']
 
-    # for clf, label in zip([pipe1, clf2, pipe3], clf_labels):
-    #     scores = cross_val_score(estimator=clf, X=X_train, y=y_train, cv=10, scoring='accuracy', error_score='raise')
-
-    #     print("Obszar pod krzywą ROC: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
-
-    classifiers_dict = {
-    'clf1': pipe1,
-    'clf2': clf2,
-    'clf3': pipe3
-}
-
-    iris = datasets.load_iris()
-    X, y = iris.data[50:, [1, 2]], iris.target[50:]
-    le = LabelEncoder()
-    y = le.fit_transform(y)
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y,
-                                                stratify=y,
-                                                random_state=1,
-                                                test_size=0.5)
-
-    mv_clf = voteClassifier(classifiers=[pipe1, clf2, pipe3])
+    mv_clf = voteClassifier(classifiers=[pipe1, clf2, pipe3, pipe4])
     clf_labels += ["Glosowanie wiekszosciowe"]
-    all_clf = [pipe1, clf2, pipe3, mv_clf]
+    all_clf = [pipe1, clf2, pipe3, pipe4, mv_clf]
 
-    for clf, label in zip(all_clf, clf_labels):
-        # print(clf)
-        scores = cross_val_score(estimator=clf, X=X_train, y=y_train, cv=10, scoring='accuracy', error_score='raise')
-        print("Obszar pod krzywą ROC: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
+    # for clf, label in zip(all_clf, clf_labels):
+    #     scores = cross_val_score(estimator=clf, X=X_train, y=y_train, cv=10, scoring='accuracy', error_score='raise')
+    #     print("Obszar pod krzywą ROC: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
+    #     clf.fit(X_train, y_train)
+    #     print(clf.score(X_test, y_test))
 
-    # estimator = []
-    # estimator.append(clf1)
-    # estimator.append(clf2)
-    # estimator.append(clf3)
+    estimator = []
+    estimator.append(pipe1)
+    estimator.append(clf2)
+    estimator.append(pipe3)
+    estimator.append(pipe4)
+
+    # clf1 = LogisticRegression(multi_class='multinomial', random_state=1)
+    # clf2 = RandomForestClassifier(n_estimators=50, random_state=1)
+    # clf3 = GaussianNB()
+    eclf1 = VotingClassifier(estimators=[
+            ('lr', clf1), ('rf', clf2), ('gnb', clf3)], voting='hard')
+    eclf1 = eclf1.fit(X_train, y_train)
+    print(eclf1.score(X_test, y_test))
 
     # # Voting Classifier with hard voting
     # vot_hard = VotingClassifier(estimators = estimator, voting ='hard')
