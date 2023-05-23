@@ -5,7 +5,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin, clone
 import pandas as pd
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder, PolynomialFeatures
-from sklearn.svm import SVC, LinearSVC
+from sklearn.svm import SVC, LinearSVC, NuSVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, BaggingClassifier, VotingClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -15,7 +15,7 @@ from mlxtend.plotting import plot_decision_regions
 from lightgbm import LGBMClassifier
 import missingno as msno
 from sklearn.metrics import confusion_matrix, classification_report, ConfusionMatrixDisplay, accuracy_score
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier
 from sklearn import svm, model_selection
 import seaborn as sns
 from sklearn.utils.metaestimators import _BaseComposition
@@ -23,14 +23,15 @@ import operator
 import string
 from sklearn import datasets
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
+import optuna
 
 import os
 from random import random, randint
 from mlflow import log_metric, log_param, log_artifacts
 
 class voteClassifier(_BaseComposition, BaseEstimator, ClassifierMixin):
-    def __init__(self, classifiers, vote='probability', weights=None):
+    def __init__(self, classifiers, vote='not probability', weights=None):
         self.classifiers = classifiers
         self.namedClassifiers = {clf.__class__.__name__: clf for clf in classifiers}
         self.vote = vote
@@ -78,6 +79,46 @@ def letter_to_int(letter):
         return str(alphabet.index(letter) + 1)  # Dodajemy 1, aby uzyskać liczby od 1 do 26
     else:
         return None
+    
+# 1. Define an objective function to be maximized.
+def objective(trial):
+    mediapipe = pd.read_excel('WZUM dataset.xlsx', sheet_name="Main")
+    # df = pd.concat(mediapipe)
+    # print(mediapipe)
+
+    for index, row in mediapipe.iterrows():
+        mediapipe.at[index, 'letter'] = letter_to_int([mediapipe.at[index, 'letter']])
+
+    # Wyodrębnienie nazw kolumn
+    columns = mediapipe.columns.tolist()
+
+    # Wybór kolumn do usunięcia
+    # columnsErase = columns[127 : 129+1]
+    columnsErase = columns[64 : 129+1]
+
+    X = mediapipe.drop(columns=columnsErase)
+
+    # # Columns to erase
+    # columns_to_remove = [col for col in X.columns if col.endswith('.z')]
+
+    # # Erase columns
+    # X = X.drop(columns=columns_to_remove)
+    X = X.drop(columns=mediapipe.columns[0],axis=1)
+    # X.to_excel('saved_file.xlsx', index = False)
+    y = mediapipe['letter']
+
+    # 2. Suggest values for the hyperparameters using a trial object.
+    classifier_name = trial.suggest_categorical('classifier', ['LinearSVC'])
+    if classifier_name == 'LinearSVC':
+         svc_c = trial.suggest_float('svc_c', 1e-1, 5, log=True)
+         classifier_obj = LinearSVC(C=svc_c)
+    # else:
+    #     rf_max_depth = trial.suggest_int('rf_max_depth', 2, 32, log=True)
+    #     classifier_obj = RandomForestClassifier(max_depth=rf_max_depth, n_estimators=10)
+    
+    score = model_selection.cross_val_score(classifier_obj, X, y, n_jobs=-1, cv=3)
+    accuracy = score.mean()
+    return accuracy
 
 
 if __name__ == '__main__':
@@ -103,6 +144,7 @@ if __name__ == '__main__':
     # # Erase columns
     # X = X.drop(columns=columns_to_remove)
     X = X.drop(columns=mediapipe.columns[0],axis=1)
+    # X.to_excel('saved_file.xlsx', index = False)
     y = mediapipe['letter']
 
     # print(X)
@@ -126,7 +168,12 @@ if __name__ == '__main__':
         KNeighborsClassifier,
         LGBMClassifier,
         AdaBoostClassifier,
-        BaggingClassifier
+        BaggingClassifier,
+        GaussianNB,
+        BernoulliNB,
+        LogisticRegression,
+        SGDClassifier,
+        NuSVC
     ]
 
     results = dict()
@@ -165,61 +212,57 @@ if __name__ == '__main__':
 
     clf1 = LinearSVC()
     clf1 = CalibratedClassifierCV(clf1) 
-    clf2 = RandomForestClassifier()
+    clf2 = RandomForestClassifier(n_estimators = 1000)
     clf3 = BaggingClassifier()
     clf4 = LGBMClassifier()
+    clf5 = LogisticRegression()
+    clf6 = NuSVC()
 
     pipe1 = Pipeline([['sc', StandardScaler()],
-                      ['clf', clf1]])
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf1]])
     
     pipe3 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
                     ['clf', clf3]])
     
     pipe4 = Pipeline([['sc', StandardScaler()],
-                ['clf', clf4]])
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf4]])
     
-    clf_labels = ['LinearSVC', 'RandomForestClassifier', 'BaggingClassifier', 'LGBMClassifier']
+    pipe5 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf5]])
+    
+    pipe6 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf6]])
+    
+    # clf_labels = ['LinearSVC', 'RandomForestClassifier', 'BaggingClassifier', 'LGBMClassifier', 'LogisticRegression', 'NuSVC']
 
-    mv_clf = voteClassifier(classifiers=[pipe1, clf2, pipe3, pipe4])
-    clf_labels += ["Glosowanie wiekszosciowe"]
-    all_clf = [pipe1, clf2, pipe3, pipe4, mv_clf]
+    # mv_clf = voteClassifier(classifiers=[pipe1, clf2, pipe3, pipe4, pipe5, pipe6])
+    # clf_labels += ["Glosowanie wiekszosciowe"]
+    # all_clf = [pipe1, clf2, pipe3, pipe4, pipe5, pipe6, mv_clf]
 
     # for clf, label in zip(all_clf, clf_labels):
     #     scores = cross_val_score(estimator=clf, X=X_train, y=y_train, cv=10, scoring='accuracy', error_score='raise')
     #     print("Obszar pod krzywą ROC: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
-    #     clf.fit(X_train, y_train)
+    #     # clf.fit(X_train, y_train)
     #     print(clf.score(X_test, y_test))
 
-    estimator = []
-    estimator.append(pipe1)
-    estimator.append(clf2)
-    estimator.append(pipe3)
-    estimator.append(pipe4)
 
     # clf1 = LogisticRegression(multi_class='multinomial', random_state=1)
     # clf2 = RandomForestClassifier(n_estimators=50, random_state=1)
     # clf3 = GaussianNB()
-    eclf1 = VotingClassifier(estimators=[
-            ('lr', clf1), ('rf', clf2), ('gnb', clf3)], voting='hard')
-    eclf1 = eclf1.fit(X_train, y_train)
-    print(eclf1.score(X_test, y_test))
+    # eclf1 = VotingClassifier(estimators=[
+    #         ('lSVC', pipe1), ('RFC', clf2), ('BC', pipe3),
+    #         ('LGBMC', pipe4), ('LR', pipe5), ('NuSVC', pipe6)],
+    #         voting='hard')
+    # eclf1 = eclf1.fit(X_train, y_train)
+    # print(eclf1.score(X_test, y_test))
 
-    # # Voting Classifier with hard voting
-    # vot_hard = VotingClassifier(estimators = estimator, voting ='hard')
-    # vot_hard.fit(X_train, y_train)
-    # y_pred = vot_hard.predict(X_test)
-    
-    # # using accuracy_score metric to predict accuracy
-    # score = accuracy_score(y_test, y_pred)
-    # print("Hard Voting Score % d" % score)
-    
-    # # Voting Classifier with soft voting
-    # vot_soft = VotingClassifier(estimators = estimator, voting ='soft')
-    # vot_soft.fit(X_train, y_train)
-    # y_pred = vot_soft.predict(X_test)
-    
-    # # using accuracy_score
-    # score = accuracy_score(y_test, y_pred)
-    # print("Soft Voting Score % d" % score)
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=100)
+    print(study.best_trial)
 
 
