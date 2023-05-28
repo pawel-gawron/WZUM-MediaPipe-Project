@@ -120,6 +120,135 @@ def objective(trial):
     accuracy = score.mean()
     return accuracy
 
+def classifier(X_train, y_train, X_test, y_test):
+    clfs = [
+        LinearSVC,
+        SVC,
+        RandomForestClassifier,
+        DecisionTreeClassifier,
+        KNeighborsClassifier,
+        LGBMClassifier,
+        AdaBoostClassifier,
+        BaggingClassifier,
+        GaussianNB,
+        BernoulliNB,
+        LogisticRegression,
+        SGDClassifier,
+        NuSVC
+    ]
+
+    results = dict()
+    print("len: ", len(X_train))
+    print("len: ", len(y_train))
+
+    for clf in clfs:
+        mdl = Pipeline([
+            ('standard_scaler', StandardScaler()),
+            ('classifier', clf())
+        ])
+        mdl.fit(X_train, y_train)
+        print(clf.__name__)
+        print(mdl.score(X_test, y_test))
+        results[clf.__name__] = mdl.score(X_test, y_test)
+
+        predict = mdl.predict(X_test)
+        cm = confusion_matrix(y_test, predict)
+        disp_cm = ConfusionMatrixDisplay(cm, display_labels=np.unique(mediapipe['letter']))
+        # print(f'confusion_matrix: \n{confusion_matrix(y_test, predict)}')
+        disp_cm.plot()
+        disp_cm.ax_.set_title(clf.__name__)
+        # plt.show()
+
+    clf = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0,
+        max_depth=1, random_state=0).fit(X_train, y_train)
+    score = clf.score(X_test, y_test)
+    print("GradientBoostingClassifier: ", score)
+
+    clf = SVC(verbose=True)
+    clf = LinearSVC(verbose=True)
+    clf.fit(X_train, y_train)
+    #preds = clf.predict(X_test)
+    train_score = clf.score(X_train, y_train)
+    test_score = clf.score(X_test, y_test)
+
+def votingClassifierOwn(X_train, y_train, X_test, y_test):
+    clf1 = LinearSVC()
+    clf1 = CalibratedClassifierCV(clf1) 
+    clf2 = RandomForestClassifier(n_estimators = 1000)
+    clf3 = BaggingClassifier()
+    clf4 = LGBMClassifier()
+    clf5 = LogisticRegression()
+    clf6 = NuSVC()
+
+    pipe1 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf1]])
+    
+    pipe3 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf3]])
+    
+    pipe4 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf4]])
+    
+    pipe5 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf5]])
+    
+    pipe6 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf6]])
+    
+    clf_labels = ['LinearSVC', 'RandomForestClassifier', 'BaggingClassifier', 'LGBMClassifier', 'LogisticRegression', 'NuSVC']
+
+    mv_clf = voteClassifier(classifiers=[pipe1, clf2, pipe3, pipe4, pipe5, pipe6])
+    clf_labels += ["Glosowanie wiekszosciowe"]
+    all_clf = [pipe1, clf2, pipe3, pipe4, pipe5, pipe6, mv_clf]
+
+    for clf, label in zip(all_clf, clf_labels):
+        scores = cross_val_score(estimator=clf, X=X_train, y=y_train, cv=10, scoring='accuracy', error_score='raise')
+        print("Obszar pod krzywą ROC: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
+        # clf.fit(X_train, y_train)
+        print(clf.score(X_test, y_test))
+
+def votingClassifierSklearn(X_train, y_train, X_test, y_test):
+    clf1 = LogisticRegression(multi_class='multinomial', random_state=1)
+    clf2 = RandomForestClassifier(n_estimators=50, random_state=1)
+    clf3 = GaussianNB()
+    clf4 = LGBMClassifier()
+    clf5 = LogisticRegression()
+    clf6 = NuSVC()
+    pipe1 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf1]])
+    
+    pipe3 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf3]])
+    
+    pipe4 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf4]])
+    
+    pipe5 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf5]])
+    
+    pipe6 = Pipeline([['sc', StandardScaler()],
+                    ['min_max_scaler', MinMaxScaler()],
+                    ['clf', clf6]])
+    eclf1 = VotingClassifier(estimators=[
+            ('lSVC', pipe1), ('RFC', clf2), ('BC', pipe3),
+            ('LGBMC', pipe4), ('LR', pipe5), ('NuSVC', pipe6)],
+            voting='hard')
+    eclf1 = eclf1.fit(X_train, y_train)
+    print(eclf1.score(X_test, y_test))
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=100)
+    print(study.best_trial)
+
 
 if __name__ == '__main__':
     mediapipe = pd.read_excel('WZUM dataset.xlsx', sheet_name="Main")
@@ -159,110 +288,7 @@ if __name__ == '__main__':
     
     # msno.matrix(X_train)
     # plt.show()
-    
-    clfs = [
-        LinearSVC,
-        SVC,
-        RandomForestClassifier,
-        DecisionTreeClassifier,
-        KNeighborsClassifier,
-        LGBMClassifier,
-        AdaBoostClassifier,
-        BaggingClassifier,
-        GaussianNB,
-        BernoulliNB,
-        LogisticRegression,
-        SGDClassifier,
-        NuSVC
-    ]
 
-    results = dict()
-    # print("len: ", len(X_train))
-    # print("len: ", len(y_train))
-
-    # for clf in clfs:
-    #     mdl = Pipeline([
-    #         ('standard_scaler', StandardScaler()),
-    #         ('classifier', clf())
-    #     ])
-    #     mdl.fit(X_train, y_train)
-    #     print(clf.__name__)
-    #     print(mdl.score(X_test, y_test))
-    #     results[clf.__name__] = mdl.score(X_test, y_test)
-
-    # # clf = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0,
-    # #     max_depth=1, random_state=0).fit(X_train, y_train)
-    # # score = clf.score(X_test, y_test)
-    # # print("GradientBoostingClassifier: ", score)
-
-    # # clf = SVC(verbose=True)
-    # # clf = LinearSVC(verbose=True)
-    # # clf.fit(X_train, y_train)
-    # # #preds = clf.predict(X_test)
-    # # train_score = clf.score(X_train, y_train)
-    # # test_score = clf.score(X_test, y_test)
-
-    #     predict = mdl.predict(X_test)
-    #     cm = confusion_matrix(y_test, predict)
-    #     disp_cm = ConfusionMatrixDisplay(cm, display_labels=np.unique(mediapipe['letter']))
-    #     # print(f'confusion_matrix: \n{confusion_matrix(y_test, predict)}')
-    #     disp_cm.plot()
-    #     disp_cm.ax_.set_title(clf.__name__)
-    #     # plt.show()
-
-    clf1 = LinearSVC()
-    clf1 = CalibratedClassifierCV(clf1) 
-    clf2 = RandomForestClassifier(n_estimators = 1000)
-    clf3 = BaggingClassifier()
-    clf4 = LGBMClassifier()
-    clf5 = LogisticRegression()
-    clf6 = NuSVC()
-
-    pipe1 = Pipeline([['sc', StandardScaler()],
-                    ['min_max_scaler', MinMaxScaler()],
-                    ['clf', clf1]])
-    
-    pipe3 = Pipeline([['sc', StandardScaler()],
-                    ['min_max_scaler', MinMaxScaler()],
-                    ['clf', clf3]])
-    
-    pipe4 = Pipeline([['sc', StandardScaler()],
-                    ['min_max_scaler', MinMaxScaler()],
-                    ['clf', clf4]])
-    
-    pipe5 = Pipeline([['sc', StandardScaler()],
-                    ['min_max_scaler', MinMaxScaler()],
-                    ['clf', clf5]])
-    
-    pipe6 = Pipeline([['sc', StandardScaler()],
-                    ['min_max_scaler', MinMaxScaler()],
-                    ['clf', clf6]])
-    
-    # clf_labels = ['LinearSVC', 'RandomForestClassifier', 'BaggingClassifier', 'LGBMClassifier', 'LogisticRegression', 'NuSVC']
-
-    # mv_clf = voteClassifier(classifiers=[pipe1, clf2, pipe3, pipe4, pipe5, pipe6])
-    # clf_labels += ["Glosowanie wiekszosciowe"]
-    # all_clf = [pipe1, clf2, pipe3, pipe4, pipe5, pipe6, mv_clf]
-
-    # for clf, label in zip(all_clf, clf_labels):
-    #     scores = cross_val_score(estimator=clf, X=X_train, y=y_train, cv=10, scoring='accuracy', error_score='raise')
-    #     print("Obszar pod krzywą ROC: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
-    #     # clf.fit(X_train, y_train)
-    #     print(clf.score(X_test, y_test))
-
-
-    # clf1 = LogisticRegression(multi_class='multinomial', random_state=1)
-    # clf2 = RandomForestClassifier(n_estimators=50, random_state=1)
-    # clf3 = GaussianNB()
-    # eclf1 = VotingClassifier(estimators=[
-    #         ('lSVC', pipe1), ('RFC', clf2), ('BC', pipe3),
-    #         ('LGBMC', pipe4), ('LR', pipe5), ('NuSVC', pipe6)],
-    #         voting='hard')
-    # eclf1 = eclf1.fit(X_train, y_train)
-    # print(eclf1.score(X_test, y_test))
-
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=100)
-    print(study.best_trial)
-
-
+    # classifier(X_train, y_train, X_test, y_test)
+    # votingClassifierSklearn(X_train, y_train, X_test, y_test)
+    # votingClassifierOwn(X_train, y_train, X_test, y_test)
