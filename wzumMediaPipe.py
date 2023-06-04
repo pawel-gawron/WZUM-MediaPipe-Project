@@ -3,7 +3,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_sc
 from sklearn.impute import KNNImputer
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 import pandas as pd
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder, PolynomialFeatures
 from sklearn.svm import SVC, LinearSVC, NuSVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, BaggingClassifier, VotingClassifier
@@ -25,6 +25,7 @@ from sklearn import datasets
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 import optuna
+from skopt import BayesSearchCV
 
 import os
 from random import random, randint
@@ -79,46 +80,6 @@ def letter_to_int(letter):
         return str(alphabet.index(letter) + 1)  # Dodajemy 1, aby uzyskać liczby od 1 do 26
     else:
         return None
-    
-# 1. Define an objective function to be maximized.
-def objective(trial):
-    mediapipe = pd.read_excel('WZUM dataset.xlsx', sheet_name="Main")
-    # df = pd.concat(mediapipe)
-    # print(mediapipe)
-
-    for index, row in mediapipe.iterrows():
-        mediapipe.at[index, 'letter'] = letter_to_int([mediapipe.at[index, 'letter']])
-
-    # Wyodrębnienie nazw kolumn
-    columns = mediapipe.columns.tolist()
-
-    # Wybór kolumn do usunięcia
-    # columnsErase = columns[127 : 129+1]
-    columnsErase = columns[64 : 129+1]
-
-    X = mediapipe.drop(columns=columnsErase)
-
-    # # Columns to erase
-    # columns_to_remove = [col for col in X.columns if col.endswith('.z')]
-
-    # # Erase columns
-    # X = X.drop(columns=columns_to_remove)
-    X = X.drop(columns=mediapipe.columns[0],axis=1)
-    # X.to_excel('saved_file.xlsx', index = False)
-    y = mediapipe['letter']
-
-    # 2. Suggest values for the hyperparameters using a trial object.
-    classifier_name = trial.suggest_categorical('classifier', ['LinearSVC'])
-    if classifier_name == 'LinearSVC':
-         svc_c = trial.suggest_float('svc_c', 1e-1, 5, log=True)
-         classifier_obj = LinearSVC(C=svc_c)
-    # else:
-    #     rf_max_depth = trial.suggest_int('rf_max_depth', 2, 32, log=True)
-    #     classifier_obj = RandomForestClassifier(max_depth=rf_max_depth, n_estimators=10)
-    
-    score = model_selection.cross_val_score(classifier_obj, X, y, n_jobs=-1, cv=3)
-    accuracy = score.mean()
-    return accuracy
 
 def classifier(X_train, y_train, X_test, y_test):
     clfs = [
@@ -245,9 +206,37 @@ def votingClassifierSklearn(X_train, y_train, X_test, y_test):
     eclf1 = eclf1.fit(X_train, y_train)
     print(eclf1.score(X_test, y_test))
 
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=100)
-    print(study.best_trial)
+    # study = optuna.create_study(direction="maximize")
+    # study.optimize(objective, n_trials=100)
+    # print(study.best_trial)
+
+
+def objective(trial, X_test, y_test):
+    # Przykładowe parametry do optymalizacji
+    C = trial.suggest_int('C', 1, 2000)
+    kernel = trial.suggest_categorical('kernel', ['linear', 'rbf', 'poly', 'sigmoid'])
+    degree = trial.suggest_int('degree', 1, 7)
+    gamma = trial.suggest_categorical('gamma', ['scale', 'auto']) or trial.suggest_float('gamma', 0.001, 2.0)
+    coef0 = trial.suggest_float('coef0', -2.0, 2.0)
+    shrinking = trial.suggest_categorical('shrinking', [True, False])
+    probability = trial.suggest_categorical('probability', [True, False])
+    tol = trial.suggest_float('tol', 1e-5, 1.2)
+    cache_size = trial.suggest_int('cache_size', 1, 1000)
+    class_weight = trial.suggest_categorical('class_weight', [None, 'balanced'])
+    verbose = trial.suggest_categorical('verbose', [True, False])
+    decision_function_shape = trial.suggest_categorical('decision_function_shape', ['ovo', 'ovr'])
+    max_iter = -1  
+    
+    # Tworzymy model z danymi parametrami
+    model = SVC(C=C, kernel=kernel, degree=degree, gamma=gamma, coef0=coef0, shrinking=shrinking,
+                probability=probability, tol=tol, cache_size=cache_size, class_weight=class_weight,
+                verbose=verbose, decision_function_shape=decision_function_shape, max_iter=max_iter)
+    
+    # Wykonujemy ocenę wydajności na podstawie walidacji krzyżowej
+    scores = cross_val_score(model, X_test, y_test, cv=5)
+    
+    # Zwracamy średnią dokładność (accuracy)
+    return scores.mean()
 
 
 if __name__ == '__main__':
@@ -268,21 +257,56 @@ if __name__ == '__main__':
     X = mediapipe.drop(columns=columnsErase)
 
     # # Columns to erase
-    # columns_to_remove = [col for col in X.columns if col.endswith('.z')]
+    columns_to_remove = [col for col in X.columns if col.endswith('.z')]
 
     # # Erase columns
-    # X = X.drop(columns=columns_to_remove)
+    X = X.drop(columns=columns_to_remove)
     X = X.drop(columns=mediapipe.columns[0],axis=1)
     # X.to_excel('saved_file.xlsx', index = False)
-    y = mediapipe['letter']
+    y = mediapipe['letter'].astype(float)
 
-    # print(X)
-    # print(y)
+    # X_train = X.head(4897) 
+    # y_train = y.head(4897)
 
+    # # print(y_train)
+
+    # X_test = X.tail(240) 
+    # y_test = y.tail(240)
+##############################################################################################################
+    mediapipe = pd.read_csv('/home/pawel/Documents/RISA/sem1/WZUM/WZUM_2023_DataGatherer/sample_dataset.csv')
+    for index, row in mediapipe.iterrows():
+        mediapipe.at[index, 'letter'] = letter_to_int([mediapipe.at[index, 'letter']])
+    columns = mediapipe.columns.tolist()
+
+    # Wybór kolumn do usunięcia
+    # columnsErase = columns[127 : 129+1]
+    columnsErase = columns[64 : 129+1]
+
+    X_mlody = mediapipe.drop(columns=columnsErase)
+    # Columns to erase
+    columns_to_remove = [col for col in X_mlody.columns if col.endswith('.z')]
+
+    # Erase columns
+    X_mlody = X_mlody.drop(columns=columns_to_remove)
+    X_mlody = X_mlody.drop(columns=mediapipe.columns[0],axis=1)
+    # X = X.astype(float)
+    y_mlody = mediapipe['letter'].astype(float)
+
+    # print(X_mlody)
+    # print(y_test)
+##############################################################################################################
     X_train, X_test, y_train, y_test = train_test_split(X, y,
                                                     stratify=y,
-                                                    random_state=0,
-                                                    test_size=0.2)
+                                                    random_state=42,
+                                                    test_size=0.6)
+    
+    scaler = StandardScaler()
+    X_test = scaler.fit_transform(X_test)
+
+    # print(X_test)
+    
+    # print("Rozmiar y_test: ", len(y_test))
+    # print("Rozmiar X_test: ", len(X_test))
     
     # print(type(y_train))
     
@@ -292,3 +316,77 @@ if __name__ == '__main__':
     # classifier(X_train, y_train, X_test, y_test)
     # votingClassifierSklearn(X_train, y_train, X_test, y_test)
     # votingClassifierOwn(X_train, y_train, X_test, y_test)
+
+
+    # lsvc = SVC(C = 1492, cache_size = 323, class_weight = 'balanced', coef0 = 0.030309819659264665,
+    #                 decision_function_shape = 'ovo', degree = 2, gamma = 'scale', kernel = 'poly',
+    #                 max_iter = -1, probability = False, random_state = None, shrinking = False,
+    #                 tol = 0.5031226880993588, verbose = False)
+    # clf = make_pipeline(StandardScaler(),
+    #                     lsvc)
+    
+    # clf.fit(X_train, y_train)
+    # score_train = clf.score(X_train, y_train)
+    # score_test = clf.score(X_test, y_test)
+    # score_mlody = clf.score(X_mlody, y_mlody)
+    # print("Score mlody: ", score_mlody)
+    # print("Score train: ", score_train)
+    # print("Score test: ", score_test)
+
+
+
+    # # Definiujemy klasyfikator, dla którego będziemy dobierać parametry
+    # classifier = SVC()
+
+    # # Definiujemy zakresy poszczególnych parametrów do optymalizacji
+    # param_space = {'C': (0.1, 1000.0),
+    #             'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+    #             'degree': (1, 5),
+    #             'gamma': (0.01, 1.0, 'log-uniform'),
+    #             'coef0': (0.0, 1.0),
+    #             'shrinking': [True, False],
+    #             'probability': [True, False],
+    #             'tol': (1e-5, 1e-3, 'log-uniform'),
+    #             'class_weight': [None, 'balanced']}
+
+    # # Wykonujemy optymalizację Bayesowską
+    # opt = BayesSearchCV(classifier, param_space, n_iter=1000, cv=5)
+    # opt.fit(X_test, y_test)
+
+    # # Wyświetlamy najlepsze znalezione parametry
+    # print("Najlepsze parametry: ", opt.best_params_)
+
+    # # Ocena wydajności na podstawie walidacji krzyżowej
+    # scores = cross_val_score(opt.best_estimator_, X, y, cv=5)
+    # print("Średnia dokładność (accuracy): ", scores.mean())
+
+
+
+############################################################################################################################
+    # Tworzymy obiekt Study z domyślnym algorytmem TPE
+    study = optuna.create_study(direction='maximize')
+
+    # Ustawienie wartości początkowych dla parametrów
+    study.enqueue_trial({'C': 1492})
+    study.enqueue_trial({'gamma': 'scale'})
+    study.enqueue_trial({'cache_size': 323})
+    study.enqueue_trial({'class_weight': 'balanced'})
+    study.enqueue_trial({'coef0': 0.030309819659264665})
+    study.enqueue_trial({'decision_function_shape': 'ovo'})
+    study.enqueue_trial({'degree': 2})
+    study.enqueue_trial({'kernel': 'poly'})
+    study.enqueue_trial({'probability': False})
+    study.enqueue_trial({'shrinking': False})
+    study.enqueue_trial({'tol': 0.5031226880993588})
+    study.enqueue_trial({'verbose': False})
+
+    # Uruchamiamy optymalizację
+    study.optimize(lambda trial: objective(trial, X, y), n_trials=1000)
+
+    # Ocena wydajności na podstawie walidacji krzyżowej
+    best_model = SVC(**study.best_params)
+    scores = cross_val_score(best_model, X_test, y_test, cv=5)
+    print("Średnia dokładność (accuracy): ", scores.mean())
+
+    # Wyświetlamy najlepsze znalezione parametry
+    print("Najlepsze parametry: ", study.best_params)
