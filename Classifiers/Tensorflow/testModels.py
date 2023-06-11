@@ -28,7 +28,7 @@ columns = mediapipe.columns.tolist()
 
 # Wybór kolumn do usunięcia
 # columnsErase = columns[127 : 129+1]
-columnsErase = columns[64 : 128+1]
+columnsErase = columns[64 : 129+1]
 
 X = mediapipe.drop(columns=columnsErase)
 

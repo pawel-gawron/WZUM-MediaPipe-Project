@@ -30,6 +30,7 @@ from skopt import BayesSearchCV
 import os
 from random import random, randint
 from mlflow import log_metric, log_param, log_artifacts
+import pickle
 
 class voteClassifier(_BaseComposition, BaseEstimator, ClassifierMixin):
     def __init__(self, classifiers, vote='not probability', weights=None):
@@ -75,7 +76,7 @@ class voteClassifier(_BaseComposition, BaseEstimator, ClassifierMixin):
 
 def letter_to_int(letter):
     letter = str(letter[0]).lower()
-    alphabet = string.ascii_lowercase
+    alphabet = 'abcdefghiklmnopqrstuvwxy'
     if letter in alphabet:
         return str(alphabet.index(letter) + 1)  # Dodajemy 1, aby uzyskać liczby od 1 do 26
     else:
@@ -298,10 +299,10 @@ if __name__ == '__main__':
     X_train, X_test, y_train, y_test = train_test_split(X, y,
                                                     stratify=y,
                                                     random_state=42,
-                                                    test_size=0.6)
+                                                    test_size=0.1)
     
-    scaler = StandardScaler()
-    X_test = scaler.fit_transform(X_test)
+    # scaler = StandardScaler()
+    # X_test = scaler.fit_transform(X_test)
 
     # print(X_test)
     
@@ -318,20 +319,23 @@ if __name__ == '__main__':
     # votingClassifierOwn(X_train, y_train, X_test, y_test)
 
 
-    # lsvc = SVC(C = 1492, cache_size = 323, class_weight = 'balanced', coef0 = 0.030309819659264665,
-    #                 decision_function_shape = 'ovo', degree = 2, gamma = 'scale', kernel = 'poly',
-    #                 max_iter = -1, probability = False, random_state = None, shrinking = False,
-    #                 tol = 0.5031226880993588, verbose = False)
-    # clf = make_pipeline(StandardScaler(),
-    #                     lsvc)
+    lsvc = SVC(C = 1492, cache_size = 323, class_weight = 'balanced', coef0 = 0.030309819659264665,
+                    decision_function_shape = 'ovo', degree = 2, gamma = 'scale', kernel = 'poly',
+                    max_iter = -1, probability = False, random_state = None, shrinking = False,
+                    tol = 0.5031226880993588, verbose = False)
+    clf = make_pipeline(StandardScaler(),
+                        lsvc)
     
-    # clf.fit(X_train, y_train)
-    # score_train = clf.score(X_train, y_train)
-    # score_test = clf.score(X_test, y_test)
-    # score_mlody = clf.score(X_mlody, y_mlody)
-    # print("Score mlody: ", score_mlody)
-    # print("Score train: ", score_train)
-    # print("Score test: ", score_test)
+    clf.fit(X_train, y_train)
+    score_train = clf.score(X_train, y_train)
+    score_test = clf.score(X_test, y_test)
+    score_mlody = clf.score(X_mlody, y_mlody)
+    print("Score mlody: ", score_mlody)
+    print("Score train: ", score_train)
+    print("Score test: ", score_test)
+
+    with open('best_clf.pkl', 'wb') as file:
+        pickle.dump(clf, file) ## clf = load do wczytywania z pliku modelu
 
 
 
@@ -363,30 +367,30 @@ if __name__ == '__main__':
 
 
 ############################################################################################################################
-    # Tworzymy obiekt Study z domyślnym algorytmem TPE
-    study = optuna.create_study(direction='maximize')
+    # # Tworzymy obiekt Study z domyślnym algorytmem TPE
+    # study = optuna.create_study(direction='maximize')
 
-    # Ustawienie wartości początkowych dla parametrów
-    study.enqueue_trial({'C': 1492})
-    study.enqueue_trial({'gamma': 'scale'})
-    study.enqueue_trial({'cache_size': 323})
-    study.enqueue_trial({'class_weight': 'balanced'})
-    study.enqueue_trial({'coef0': 0.030309819659264665})
-    study.enqueue_trial({'decision_function_shape': 'ovo'})
-    study.enqueue_trial({'degree': 2})
-    study.enqueue_trial({'kernel': 'poly'})
-    study.enqueue_trial({'probability': False})
-    study.enqueue_trial({'shrinking': False})
-    study.enqueue_trial({'tol': 0.5031226880993588})
-    study.enqueue_trial({'verbose': False})
+    # # Ustawienie wartości początkowych dla parametrów
+    # study.enqueue_trial({'C': 1492})
+    # study.enqueue_trial({'gamma': 'scale'})
+    # study.enqueue_trial({'cache_size': 323})
+    # study.enqueue_trial({'class_weight': 'balanced'})
+    # study.enqueue_trial({'coef0': 0.030309819659264665})
+    # study.enqueue_trial({'decision_function_shape': 'ovo'})
+    # study.enqueue_trial({'degree': 2})
+    # study.enqueue_trial({'kernel': 'poly'})
+    # study.enqueue_trial({'probability': False})
+    # study.enqueue_trial({'shrinking': False})
+    # study.enqueue_trial({'tol': 0.5031226880993588})
+    # study.enqueue_trial({'verbose': False})
 
-    # Uruchamiamy optymalizację
-    study.optimize(lambda trial: objective(trial, X, y), n_trials=1000)
+    # # Uruchamiamy optymalizację
+    # study.optimize(lambda trial: objective(trial, X, y), n_trials=1000)
 
-    # Ocena wydajności na podstawie walidacji krzyżowej
-    best_model = SVC(**study.best_params)
-    scores = cross_val_score(best_model, X_test, y_test, cv=5)
-    print("Średnia dokładność (accuracy): ", scores.mean())
+    # # Ocena wydajności na podstawie walidacji krzyżowej
+    # best_model = SVC(**study.best_params)
+    # scores = cross_val_score(best_model, X_test, y_test, cv=5)
+    # print("Średnia dokładność (accuracy): ", scores.mean())
 
-    # Wyświetlamy najlepsze znalezione parametry
-    print("Najlepsze parametry: ", study.best_params)
+    # # Wyświetlamy najlepsze znalezione parametry
+    # print("Najlepsze parametry: ", study.best_params)

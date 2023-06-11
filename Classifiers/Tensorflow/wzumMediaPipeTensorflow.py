@@ -39,10 +39,16 @@ X = X.drop(columns=mediapipe.columns[0],axis=1)
 y = mediapipe['letter'].astype(float)
 y.to_excel('saved_file.xlsx', index = False)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y,
-                                                stratify=y,
-                                                random_state=42,
-                                                test_size=0.3)
+X_train = X.head(4898) 
+y_train = y.head(4898)
+
+X_test = X.tail(240) 
+y_test = y.tail(240) 
+
+# X_train, X_test, y_train, y_test = train_test_split(X, y,
+#                                                 stratify=y,
+#                                                 random_state=42,
+#                                                 test_size=0.3)
 print(X_test.shape)
 print(y_test.shape)
 
@@ -67,18 +73,22 @@ y_val = tf.convert_to_tensor(y_val.values, dtype=tf.float32)
 # Definicja modelu
 model = tf.keras.Sequential([
     tf.keras.layers.Dense(64, activation='relu', input_shape=(X_train.shape[1],)),
+    tf.keras.layers.Dropout(0.2),
     tf.keras.layers.Dense(24, activation='softmax')
 ])
+
+es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
 
 # Kompilacja modelu
 model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
 # Trening modelu
-num_epochs = 150
+num_epochs = 60
 batch_size = 20
 
 history = model.fit(X_train, y_train, epochs=num_epochs, batch_size=batch_size,
-                    validation_data=(X_test, y_test))
+                    validation_data=(X_val, y_val),
+                    callbacks=[es_callback])
 
 # history = model.fit(X_train, y_train, epochs=num_epochs, batch_size=batch_size, verbose=1)
 
@@ -97,5 +107,8 @@ test_loss, test_acc = model.evaluate(X_test,  y_test, verbose=2)
 
 print(test_acc)
 
-# print(f'Training Loss: {train_loss:.4f}')
+# Save the entire model as a SavedModel.
+model.save('saved_model/my_model.h5')
+
+# print(f'Training Loss: {test_loss:.4f}')
 # print(f'Test Loss: {test_loss:.4f}')
